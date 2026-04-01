@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>BNDR // Acoustic Shockwave</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --neon-primary: #00ffff;
+            --neon-secondary: #ff0055;
+            --bg-color: #030305;
+        }
+
+        body { 
+            background-color: var(--bg-color); 
+            margin: 0; 
+            overflow: hidden; 
+            color: #fff;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+            overscroll-behavior: none;
+        }
+
+        .safe-paddings {
+            padding-top: max(1.5rem, env(safe-area-inset-top));
+            padding-bottom: max(2rem, env(safe-area-inset-bottom));
+            padding-left: max(1.5rem, env(safe-area-inset-left));
+            padding-right: max(1.5rem, env(safe-area-inset-right));
+        }
+        @media (min-width: 768px) {
+            .safe-paddings {
+                padding: 2.5rem;
+            }
+        }
+
+        .font-syne { font-family: 'Syne', sans-serif; }
+        .font-mono-tech { font-family: 'JetBrains Mono', monospace; }
+        
+        .glitch-text { 
+            position: relative; 
+            display: inline-block;
+            white-space: nowrap;
+            will-change: transform, font-size;
+        }
+        
+        .glitch-text::before, .glitch-text::after {
+            content: attr(data-text); 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%;
+            opacity: 0; 
+            z-index: -1; 
+            pointer-events: none;
+        }
+        
+        .is-dropping .glitch-text::before {
+            left: 5px; 
+            text-shadow: -5px 0 var(--neon-secondary); 
+            opacity: 1; 
+            animation: glitch-anim-1 0.1s infinite linear alternate-reverse;
+        }
+        
+        .is-dropping .glitch-text::after {
+            left: -5px; 
+            text-shadow: 5px 0 var(--neon-primary); 
+            opacity: 1; 
+            animation: glitch-anim-2 0.15s infinite linear alternate-reverse;
+        }
+        
+        @keyframes glitch-anim-1 { 
+            0% { clip-path: inset(20% 0 80% 0); transform: translate(-2px, 1px); } 
+            20% { clip-path: inset(60% 0 10% 0); transform: translate(2px, -1px); }
+            40% { clip-path: inset(40% 0 50% 0); transform: translate(-2px, 2px); }
+            60% { clip-path: inset(80% 0 5% 0); transform: translate(2px, -2px); }
+            80% { clip-path: inset(10% 0 70% 0); transform: translate(-1px, 1px); }
+            100% { clip-path: inset(30% 0 20% 0); transform: translate(1px, -1px); }
+        }
+        
+        @keyframes glitch-anim-2 { 
+            0% { clip-path: inset(10% 0 60% 0); transform: translate(2px, 1px); } 
+            20% { clip-path: inset(30% 0 20% 0); transform: translate(-2px, -1px); }
+            40% { clip-path: inset(70% 0 10% 0); transform: translate(2px, 2px); }
+            60% { clip-path: inset(20% 0 50% 0); transform: translate(-2px, -2px); }
+            80% { clip-path: inset(50% 0 30% 0); transform: translate(1px, 1px); }
+            100% { clip-path: inset(5% 0 80% 0); transform: translate(-1px, -1px); }
+        }
+        
+        canvas { 
+            display: block; 
+            outline: none; 
+        }
+        
+        .crosshair {
+            position: fixed; 
+            top: 50%; 
+            left: 50%; 
+            width: 40px; 
+            height: 40px;
+            transform: translate(-50%, -50%); 
+            pointer-events: none; 
+            z-index: 50; 
+            mix-blend-mode: difference;
+            transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1), height 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        
+        .is-charging .crosshair {
+            width: 20px;
+            height: 20px;
+        }
+
+        .crosshair::before, .crosshair::after {
+            content: ''; 
+            position: absolute; 
+            background: white;
+        }
+        
+        .crosshair::before { top: 50%; left: 0; width: 100%; height: 1px; transform: translateY(-50%); }
+        .crosshair::after { left: 50%; top: 0; width: 1px; height: 100%; transform: translateX(-50%); }
+
+        .charge-ring {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 100px;
+            height: 100px;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 50%;
+            transform: translate(-50%, -50%) scale(1);
+            pointer-events: none;
+            opacity: 0;
+        }
+
+        .scanline {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.1));
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 40;
+            opacity: 0.3;
+        }
+    </style>
+
+    <!-- Import maps for Three.js -->
+    <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body class="antialiased w-screen h-screen">
+
+    <!-- Overlays -->
+    <div class="scanline"></div>
+    <div class="crosshair"></div>
+    <div class="charge-ring"></div>
+
+    <!-- UI Layer -->
+    <main class="absolute inset-0 pointer-events-none z-10 flex flex-col justify-between safe-paddings mix-blend-difference">
+        
+        <!-- Header -->
+        <header class="flex justify-between items-start font-mono-tech w-full">
+            <div class="flex flex-col uppercase tracking-widest text-[10px] md:text-xs font-bold gap-1 opacity-80">
+                <span class="text-white">System.Init()</span>
+                <span class="text-zinc-500">Acoustic_Shard_Generator</span>
+                <span class="text-[#00ffff] mt-2 freq-monitor">FREQ: 432.00 HZ</span>
+            </div>
+            <div class="text-right uppercase tracking-widest text-[10px] md:text-xs font-bold opacity-50">
+                VOL. 11 // AWW
+            </div>
+        </header>
+        
+        <!-- Typography Tension -->
+        <div id="title-container" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full flex justify-between px-6 md:px-24 items-center overflow-visible pointer-events-none z-0">
+            <h1 id="title-left" class="font-syne font-black tracking-tighter leading-none opacity-90 glitch-text text-white" data-text="BN">BN</h1>
+            <h1 id="title-right" class="font-syne font-black tracking-tighter leading-none opacity-90 glitch-text text-white" data-text="DR">DR</h1>
+        </div>
+
+        <!-- Footer / Interaction Prompt -->
+        <footer class="flex justify-between items-end pb-2 font-mono-tech w-full">
+            <div class="flex gap-4 items-end">
+                <div class="flex flex-col">
+                    <div class="w-16 h-[2px] bg-white mb-3 transform origin-left charge-bar"></div>
+                    <div class="uppercase tracking-widest text-[10px] md:text-xs leading-tight">
+                        <span class="opacity-50">Interaction_Protocol</span><br>
+                        <span class="font-bold text-white">Hold to compress<br>Release to shatter</span>
+                    </div>
+                </div>
+            </div>
+            <div class="text-[10px] tracking-[0.2em] opacity-30 text-right flex flex-col gap-1">
+                <span>STATUS: STANDBY</span>
+                <span>LAT_34.05 / LON_-118.24</span>
+            </div>
+        </footer>
+    </main>
+
+    <!-- WebGL Canvas Container -->
+    <div id="canvas-container" class="absolute inset-0 z-0 cursor-none touch-none bg-black"></div>
+
+    <!-- Main Logic -->
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        // --- SCENE SETUP ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x030305, 0.04);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 150);
+        camera.position.z = 18;
+
+        const renderer = new THREE.WebGLRenderer({ 
+            antialias: false, 
+            alpha: false, 
+            powerPreference: "high-performance",
+            stencil: false,
+            depth: true
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        container.appendChild(renderer.domElement);
+
+        // --- LIGHTING ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.1);
+        scene.add(ambientLight);
+
+        const coreLight = new THREE.PointLight(0x00ffff, 0, 30);
+        scene.add(coreLight);
+
+        const rimLight1 = new THREE.SpotLight(0xff0055, 100);
+        rimLight1.position.set(15, 15, -15);
+        rimLight1.lookAt(0,0,0);
+        rimLight1.penumbra = 0.5;
+        scene.add(rimLight1);
+
+        const rimLight2 = new THREE.SpotLight(0x00ffff, 100);
+        rimLight2.position.set(-15, -15, -15);
+        rimLight2.lookAt(0,0,0);
+        rimLight2.penumbra = 0.5;
+        scene.add(rimLight2);
+        
+        const topLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        topLight.position.set(0, 20, 0);
+        scene.add(topLight);
+
+        // --- CRYSTALS / POLYGONS ---
+        const shardCount = 380;
+        const shards = [];
+        const geometries = [
+            new THREE.TetrahedronGeometry(1, 0),
+            new THREE.OctahedronGeometry(1, 0),
+            new THREE.IcosahedronGeometry(1, 0)
+        ];
+        
+        const material = new THREE.MeshPhysicalMaterial({
+            color: 0x0a0a0c,
+            metalness: 0.9,
+            roughness: 0.15,
+            clearcoat: 1.0,
+            clearcoatRoughness: 0.1,
+            envMapIntensity: 2.0
+        });
+        
+        const innerMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0x000000, 
+            wireframe: true, 
+            transparent: true, 
+            opacity: 0.3,
+            blending: THREE.AdditiveBlending
+        });
+
+        const group = new THREE.Group();
+        scene.add(group);
+
+        for (let i = 0; i < shardCount; i++) {
+            const geo = geometries[Math.floor(Math.random() * geometries.length)];
+            const scale = 0.3 + Math.random() * 0.9;
+            
+            const mesh = new THREE.Mesh(geo, material);
+            mesh.scale.set(scale, scale, scale);
+            
+            const innerMesh = new THREE.Mesh(geo, innerMaterial);
+            innerMesh.scale.set(0.99, 0.99, 0.99);
+            mesh.add(innerMesh);
+
+            const r = Math.pow(Math.random(), 0.6) * 7.5;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos((Math.random() * 2) - 1);
+            
+            const x = r * Math.sin(phi) * Math.cos(theta);
+            const y = r * Math.sin(phi) * Math.sin(theta);
+            const z = r * Math.cos(phi);
+            
+            mesh.position.set(x, y, z);
+            mesh.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+            
+            group.add(mesh);
+            
+            shards.push({
+                mesh,
+                innerMesh,
+                basePos: new THREE.Vector3(x, y, z),
+                velocity: new THREE.Vector3(),
+                rotVelocity: new THREE.Vector3(
+                    (Math.random()-0.5)*0.02, 
+                    (Math.random()-0.5)*0.02, 
+                    (Math.random()-0.5)*0.02
+                ),
+                randomSeed: Math.random()
+            });
+        }
+
+        const particleGeo = new THREE.BufferGeometry();
+        const particleCount = 1000;
+        const posArray = new Float32Array(particleCount * 3);
+        for(let i=0; i<particleCount*3; i++) {
+            posArray[i] = (Math.random() - 0.5) * 40;
+        }
+        particleGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+        const particleMat = new THREE.PointsMaterial({
+            size: 0.05,
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.3,
+            blending: THREE.AdditiveBlending
+        });
+        const particles = new THREE.Points(particleGeo, particleMat);
+        scene.add(particles);
+
+        // --- POST PROCESSING ---
+        const composer = new EffectComposer(renderer);
+        const renderPass = new RenderPass(scene, camera);
+        composer.addPass(renderPass);
+
+        const shockwaveShader = {
+            uniforms: {
+                tDiffuse: { value: null },
+                uShockwave: { value: 0.0 },
+                uTime: { value: 0.0 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform sampler2D tDiffuse;
+                uniform float uShockwave;
+                uniform float uTime;
+                varying vec2 vUv;
+                
+                float rand(vec2 co){ return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453); }
+                
+                void main() {
+                    vec2 uv = vUv;
+                    vec2 center = vec2(0.5, 0.5);
+                    vec2 dir = uv - center;
+                    float dist = length(dir);
+                    
+                    vec2 dirNorm = dist > 0.0 ? normalize(dir) : vec2(0.0);
+                    
+                    float ripple = sin(dist * 60.0 - uTime * 40.0) * exp(-dist * 4.0) * uShockwave * 0.15;
+                    vec2 displacedUv = uv + dirNorm * ripple;
+                    
+                    float rgbSplit = uShockwave * 0.15 * exp(-dist * 2.5);
+                    
+                    vec4 c1 = texture2D(tDiffuse, displacedUv + dirNorm * rgbSplit);
+                    vec4 c2 = texture2D(tDiffuse, displacedUv);
+                    vec4 c3 = texture2D(tDiffuse, displacedUv - dirNorm * rgbSplit);
+                    
+                    float noise = (rand(uv * uTime) - 0.5) * 0.15 * uShockwave;
+                    
+                    gl_FragColor = vec4(c1.r + noise, c2.g + noise, c3.b + noise, 1.0);
+                }
+            `
+        };
+        const shockwavePass = new ShaderPass(shockwaveShader);
+        composer.addPass(shockwavePass);
+
+        const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+        bloomPass.threshold = 0.1;
+        bloomPass.strength = 0.6; 
+        bloomPass.radius = 0.8;
+        composer.addPass(bloomPass);
+
+        // --- TYPOGRAPHY AUTO-FIT ---
+        function autoFitTitle() {
+            const container = document.getElementById('title-container');
+            const left = document.getElementById('title-left');
+            const right = document.getElementById('title-right');
+            
+            if(!container || !left || !right) return;
+            
+            const containerStyle = window.getComputedStyle(container);
+            const paddingLeft = parseFloat(containerStyle.paddingLeft) || 0;
+            const paddingRight = parseFloat(containerStyle.paddingRight) || 0;
+            const availableWidth = container.clientWidth - paddingLeft - paddingRight;
+            
+            left.style.fontSize = '100px';
+            right.style.fontSize = '100px';
+            
+            const leftWidth = left.offsetWidth || 1;
+            const rightWidth = right.offsetWidth || 1;
+            
+            const isMobile = window.innerWidth < 768;
+            const maxSideWidth = availableWidth * (isMobile ? 0.45 : 0.40);
+            
+            const leftScale = maxSideWidth / leftWidth;
+            const rightScale = maxSideWidth / rightWidth;
+            
+            const finalScale = Math.min(leftScale, rightScale);
+            
+            const maxVh = isMobile ? 35 : 55;
+            const computedSize = Math.min(100 * finalScale, (window.innerHeight * maxVh) / 100);
+            
+            left.style.fontSize = `${computedSize}px`;
+            right.style.fontSize = `${computedSize}px`;
+        }
+
+        // --- INTERACTION PHYSICS ---
+        let isCharging = false;
+        let chargeLevel = 0;
+        const mouse = new THREE.Vector2();
+        const targetMouse = new THREE.Vector2();
+        const chargeRing = document.querySelector('.charge-ring');
+
+        window.addEventListener('pointermove', (e) => {
+            targetMouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+            targetMouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        });
+
+        const handleDown = () => {
+            isCharging = true;
+            document.body.classList.add('is-charging');
+            document.body.classList.remove('is-dropping');
+            
+            gsap.to('.charge-bar', { scaleX: 12, duration: 2, ease: "power2.inOut" });
+            gsap.to(chargeRing, { opacity: 1, scale: 0.5, duration: 2, ease: "power2.inOut" });
+            
+            coreLight.color.setHex(0xff0055);
+        };
+
+        const handleUp = () => {
+            if (!isCharging) return;
+            isCharging = false;
+            
+            document.body.classList.remove('is-charging');
+            document.body.classList.add('is-dropping');
+            
+            gsap.to('.charge-bar', { scaleX: 1, duration: 0.4, ease: "expo.out" });
+            gsap.to(chargeRing, { opacity: 0, scale: 2, duration: 0.5, ease: "expo.out" });
+            
+            shockwavePass.uniforms.uShockwave.value = 1.0;
+            bloomPass.strength = 3.5;
+            coreLight.intensity = 200;
+            coreLight.color.setHex(0x00ffff);
+            
+            const explosionForce = 4.0 + chargeLevel * 8.0;
+            shards.forEach(s => {
+                const dir = s.mesh.position.clone().normalize();
+                if (dir.lengthSq() === 0) dir.set(0, 1, 0);
+                
+                s.velocity.add(dir.multiplyScalar(explosionForce * (0.6 + Math.random() * 0.8)));
+                
+                s.rotVelocity.set(
+                    (Math.random() - 0.5) * 1.5,
+                    (Math.random() - 0.5) * 1.5,
+                    (Math.random() - 0.5) * 1.5
+                );
+                
+                s.innerMesh.material.color.setHex(Math.random() > 0.5 ? 0x00ffff : 0xff0055);
+            });
+            
+            chargeLevel = 0;
+            
+            setTimeout(() => {
+                document.body.classList.remove('is-dropping');
+            }, 300);
+            
+            gsap.fromTo(camera.position, 
+                { z: 16 }, 
+                { z: 18, duration: 1.5, ease: "elastic.out(1, 0.3)" }
+            );
+        };
+
+        window.addEventListener('pointerdown', handleDown);
+        window.addEventListener('pointerup', handleUp);
+        window.addEventListener('pointerleave', handleUp);
+        window.addEventListener('pointercancel', handleUp);
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+            autoFitTitle();
+        });
+
+        document.fonts.ready.then(autoFitTitle);
+        autoFitTitle();
+
+        // --- ANIMATION LOOP ---
+        const clock = new THREE.Clock();
+        const freqMonitor = document.querySelector('.freq-monitor');
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = clock.getDelta();
+            const elapsedTime = clock.getElapsedTime();
+            
+            mouse.lerp(targetMouse, 0.08);
+            camera.position.x = mouse.x * 3.0;
+            camera.position.y = mouse.y * 3.0;
+            camera.lookAt(0, 0, 0);
+
+            group.rotation.y = elapsedTime * 0.05;
+            group.rotation.x = Math.sin(elapsedTime * 0.1) * 0.05;
+            
+            particles.rotation.y = elapsedTime * 0.02;
+
+            if (isCharging) {
+                chargeLevel += (1.0 - chargeLevel) * 0.03;
+                coreLight.intensity = chargeLevel * 80;
+                bloomPass.strength = 0.6 + chargeLevel * 2.0;
+                
+                camera.position.x += (Math.random() - 0.5) * chargeLevel * 0.15;
+                camera.position.y += (Math.random() - 0.5) * chargeLevel * 0.15;
+                
+                if(Math.random() > 0.8) freqMonitor.innerText = `FREQ: ${(432 + chargeLevel * 500 + Math.random()*50).toFixed(2)} HZ`;
+            } else {
+                coreLight.intensity *= 0.9;
+                bloomPass.strength += (0.6 - bloomPass.strength) * 0.05;
+                if(Math.random() > 0.95) freqMonitor.innerText = `FREQ: ${(432.00 + Math.random()*2).toFixed(2)} HZ`;
+            }
+
+            shockwavePass.uniforms.uTime.value = elapsedTime;
+            shockwavePass.uniforms.uShockwave.value *= 0.93;
+
+            shards.forEach(s => {
+                const pulse = Math.sin(elapsedTime * 3.0 + s.randomSeed * 20.0) * 0.15;
+                
+                let target = s.basePos.clone().multiplyScalar(1.0 + pulse);
+                target.lerp(new THREE.Vector3(0,0,0), chargeLevel * 0.85);
+                
+                const force = target.sub(s.mesh.position).multiplyScalar(0.06);
+                
+                s.velocity.add(force);
+                s.velocity.multiplyScalar(0.88);
+                
+                s.mesh.position.add(s.velocity);
+                
+                if (isCharging) {
+                    const vibrate = chargeLevel * 0.15 * Math.random();
+                    s.mesh.position.addScalar((Math.random() - 0.5) * vibrate);
+                }
+
+                s.mesh.rotation.x += s.rotVelocity.x + 0.002;
+                s.mesh.rotation.y += s.rotVelocity.y + 0.003;
+                s.mesh.rotation.z += s.rotVelocity.z + 0.001;
+                s.rotVelocity.multiplyScalar(0.94);
+                
+                if(!isCharging) {
+                    s.innerMesh.material.color.lerp(new THREE.Color(0x000000), 0.05);
+                }
+            });
+
+            gsap.to('.glitch-text', {
+                x: -mouse.x * 30,
+                y: mouse.y * 30,
+                duration: 0.5
+            });
+
+            composer.render();
+        }
+
+        animate();
+        
+        // --- INTRO SEQUENCE ---
+        gsap.from("header, footer", { opacity: 0, y: 20, duration: 1.5, ease: "power3.out", stagger: 0.2, delay: 0.5 });
+        gsap.from(".glitch-text", { opacity: 0, scale: 0.8, filter: "blur(20px)", duration: 2.5, ease: "expo.out", stagger: 0.1, delay: 0.2 });
+        gsap.from(camera.position, { z: 30, duration: 3, ease: "power3.out" });
+
+    </script>
+</body>
+</html>
