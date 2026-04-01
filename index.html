@@ -26,6 +26,7 @@
             color: #fff;
             user-select: none;
             -webkit-user-select: none;
+            -webkit-touch-callout: none;
             touch-action: none;
             overscroll-behavior: none;
         }
@@ -50,6 +51,7 @@
             display: inline-block;
             white-space: nowrap;
             will-change: transform, font-size;
+            transform: translateZ(0);
         }
         
         .glitch-text::before, .glitch-text::after {
@@ -119,6 +121,12 @@
             height: 20px;
         }
 
+        @media (hover: none) and (pointer: coarse) {
+            .crosshair {
+                display: none !important;
+            }
+        }
+
         .crosshair::before, .crosshair::after {
             content: ''; 
             position: absolute; 
@@ -146,7 +154,7 @@
             top: 0;
             left: 0;
             width: 100vw;
-            height: 100vh;
+            height: 100dvh;
             background: linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0) 50%, rgba(0,0,0,0.1) 50%, rgba(0,0,0,0.1));
             background-size: 100% 4px;
             pointer-events: none;
@@ -160,13 +168,13 @@
     <script type="importmap">
         {
             "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
             }
         }
     </script>
 </head>
-<body class="antialiased w-screen h-screen">
+<body class="antialiased w-screen h-[100dvh] overflow-hidden">
 
     <!-- Overlays -->
     <div class="scanline"></div>
@@ -177,14 +185,20 @@
     <main class="absolute inset-0 pointer-events-none z-10 flex flex-col justify-between safe-paddings mix-blend-difference">
         
         <!-- Header -->
-        <header class="flex justify-between items-start font-mono-tech w-full">
-            <div class="flex flex-col uppercase tracking-widest text-[10px] md:text-xs font-bold gap-1 opacity-80">
-                <span class="text-white">System.Init()</span>
-                <span class="text-zinc-500">Acoustic_Shard_Generator</span>
-                <span class="text-[#00ffff] mt-2 freq-monitor">FREQ: 432.00 HZ</span>
+        <header class="flex justify-between items-start font-mono-tech w-full gap-4">
+            <div class="flex flex-col uppercase tracking-widest text-[10px] md:text-xs font-bold gap-1 opacity-80 min-w-0">
+                <span class="text-white truncate">System.Init()</span>
+                <span class="text-zinc-500 truncate">Acoustic_Shard_Generator</span>
+                <span class="text-[#00ffff] mt-2 freq-monitor truncate">FREQ: 432.00 HZ</span>
             </div>
-            <div class="text-right uppercase tracking-widest text-[10px] md:text-xs font-bold opacity-50">
-                VOL. 11 // AWW
+            <div class="flex flex-col items-end gap-0 shrink-0 pointer-events-auto">
+                <div class="text-right uppercase tracking-widest text-[10px] md:text-xs font-bold opacity-50 pointer-events-none mb-1">
+                    VOL. 11 // AWW
+                </div>
+                <button id="io-toggle" class="flex items-center gap-2 text-[10px] md:text-xs font-mono-tech font-bold uppercase tracking-widest opacity-70 hover:opacity-100 transition-all active:scale-95 py-2 pl-4 -mr-1">
+                    <span class="io-status text-zinc-500 transition-colors">I/O_OFF</span>
+                    <div class="w-1.5 h-1.5 rounded-full bg-zinc-600 io-indicator transition-all duration-300"></div>
+                </button>
             </div>
         </header>
         
@@ -195,17 +209,17 @@
         </div>
 
         <!-- Footer / Interaction Prompt -->
-        <footer class="flex justify-between items-end pb-2 font-mono-tech w-full">
-            <div class="flex gap-4 items-end">
+        <footer class="flex justify-between items-end pb-2 font-mono-tech w-full gap-4">
+            <div class="flex gap-4 items-end min-w-0">
                 <div class="flex flex-col">
                     <div class="w-16 h-[2px] bg-white mb-3 transform origin-left charge-bar"></div>
                     <div class="uppercase tracking-widest text-[10px] md:text-xs leading-tight">
                         <span class="opacity-50">Interaction_Protocol</span><br>
-                        <span class="font-bold text-white">Hold to compress<br>Release to shatter</span>
+                        <span class="font-bold text-white whitespace-nowrap">Hold to compress<br>Release to shatter</span>
                     </div>
                 </div>
             </div>
-            <div class="text-[10px] tracking-[0.2em] opacity-30 text-right flex flex-col gap-1">
+            <div class="text-[10px] tracking-[0.2em] opacity-30 text-right flex flex-col gap-1 shrink-0">
                 <span>STATUS: STANDBY</span>
                 <span>LAT_34.05 / LON_-118.24</span>
             </div>
@@ -213,7 +227,7 @@
     </main>
 
     <!-- WebGL Canvas Container -->
-    <div id="canvas-container" class="absolute inset-0 z-0 cursor-none touch-none bg-black"></div>
+    <div id="canvas-container" class="absolute inset-0 z-0 touch-none bg-black"></div>
 
     <!-- Main Logic -->
     <script type="module">
@@ -222,6 +236,160 @@
         import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
         import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
         import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        // --- NATIVE WEB AUDIO SYNTHESIS ENGINE ---
+        const AcousticEngine = {
+            ctx: null,
+            master: null,
+            ambOsc: null,
+            ambPan: null,
+            chargeOsc: null,
+            chargeOsc2: null,
+            chargeGain: null,
+            initialized: false,
+            ioEnabled: false,
+
+            init() {
+                if (this.initialized) return;
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContext) return;
+                
+                this.ctx = new AudioContext();
+                this.master = this.ctx.createGain();
+                this.master.connect(this.ctx.destination);
+                this.master.gain.value = 0; // Starts silent until I/O is toggled
+
+                // Ambient Tracker (Glassy, clean sine)
+                this.ambOsc = this.ctx.createOscillator();
+                this.ambOsc.type = 'sine';
+                this.ambOsc.frequency.value = 432;
+                
+                this.ambPan = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : this.ctx.createGain();
+                const ambGain = this.ctx.createGain();
+                ambGain.gain.value = 0.03; 
+                
+                this.ambOsc.connect(this.ambPan);
+                this.ambPan.connect(ambGain);
+                ambGain.connect(this.master);
+                this.ambOsc.start();
+                this.ambGainNode = ambGain;
+
+                // Clean Charge Synth (Pure harmonic sine & triangle)
+                this.chargeOsc = this.ctx.createOscillator();
+                this.chargeOsc.type = 'sine'; 
+                this.chargeOsc.frequency.value = 216;
+
+                this.chargeOsc2 = this.ctx.createOscillator();
+                this.chargeOsc2.type = 'triangle';
+                this.chargeOsc2.frequency.value = 432;
+
+                this.chargeGain = this.ctx.createGain();
+                this.chargeGain.gain.value = 0;
+
+                this.chargeOsc.connect(this.chargeGain);
+                this.chargeOsc2.connect(this.chargeGain);
+                this.chargeGain.connect(this.master);
+
+                this.chargeOsc.start();
+                this.chargeOsc2.start();
+
+                this.initialized = true;
+            },
+
+            toggleIO() {
+                this.ioEnabled = !this.ioEnabled;
+                
+                const indicator = document.querySelector('.io-indicator');
+                const status = document.querySelector('.io-status');
+
+                if (this.ioEnabled) {
+                    if (!this.initialized) this.init();
+                    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+                    
+                    this.master.gain.setTargetAtTime(0.6, this.ctx.currentTime, 0.1);
+                    
+                    indicator.classList.replace('bg-zinc-600', 'bg-[#00ffff]');
+                    indicator.classList.add('shadow-[0_0_8px_#00ffff]');
+                    status.innerText = 'I/O_ON';
+                    status.classList.replace('text-zinc-500', 'text-[#00ffff]');
+                } else {
+                    if (this.ctx) this.master.gain.setTargetAtTime(0, this.ctx.currentTime, 0.1);
+                    
+                    indicator.classList.replace('bg-[#00ffff]', 'bg-zinc-600');
+                    indicator.classList.remove('shadow-[0_0_8px_#00ffff]');
+                    status.innerText = 'I/O_OFF';
+                    status.classList.replace('text-[#00ffff]', 'text-zinc-500');
+                }
+            },
+
+            triggerInit() {
+                // Background initialization without unmuting
+                if (!this.initialized) this.init();
+                if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+            },
+
+            updateTelemetry(mouseX, mouseY, chargeLevel, isCharging) {
+                if (!this.initialized || !this.ctx || !this.ioEnabled) return;
+                
+                const time = this.ctx.currentTime + 0.05;
+
+                // Tactile Ambient Mapping: Pan matches X, Pitch matches Y harmonically
+                if (this.ambPan.pan) this.ambPan.pan.setTargetAtTime(mouseX, time, 0.1);
+                this.ambOsc.frequency.setTargetAtTime(432 + (mouseY * 12), time, 0.2); 
+
+                if (isCharging) {
+                    // Smooth, pure frequency escalation
+                    this.chargeOsc.frequency.setTargetAtTime(216 + (chargeLevel * 432), time, 0.1);
+                    this.chargeOsc2.frequency.setTargetAtTime(432 + (chargeLevel * 864), time, 0.1);
+                }
+            },
+
+            startCharge() {
+                if (!this.initialized || !this.ioEnabled) return;
+                this.chargeGain.gain.setTargetAtTime(0.15, this.ctx.currentTime, 0.2);
+            },
+
+            shatter(intensity) {
+                if (!this.initialized || !this.ioEnabled) return;
+                const time = this.ctx.currentTime;
+                
+                // Cut the charge tone instantly
+                this.chargeGain.gain.setTargetAtTime(0, time, 0.05);
+
+                // Pure Future Lazer Zap (Sine Sweep)
+                const zap = this.ctx.createOscillator();
+                zap.type = 'sine';
+                const zapGain = this.ctx.createGain();
+                
+                zap.connect(zapGain);
+                zapGain.connect(this.master);
+
+                zap.frequency.setValueAtTime(1500 + (intensity * 300), time);
+                zap.frequency.exponentialRampToValueAtTime(100, time + 0.35);
+
+                zapGain.gain.setValueAtTime(0.8, time);
+                zapGain.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
+
+                zap.start(time);
+                zap.stop(time + 0.4);
+
+                // Glassy Trailing Ping (Triangle)
+                const ping = this.ctx.createOscillator();
+                ping.type = 'triangle';
+                const pingGain = this.ctx.createGain();
+                
+                ping.connect(pingGain);
+                pingGain.connect(this.master);
+                
+                ping.frequency.setValueAtTime(3000 + (intensity * 800), time);
+                
+                pingGain.gain.setValueAtTime(0.15, time);
+                pingGain.gain.exponentialRampToValueAtTime(0.001, time + 0.6);
+                
+                ping.start(time);
+                ping.stop(time + 0.65);
+            }
+        };
 
         // --- SCENE SETUP ---
         const container = document.getElementById('canvas-container');
@@ -450,7 +618,16 @@
         const targetMouse = new THREE.Vector2();
         const chargeRing = document.querySelector('.charge-ring');
 
+        // I/O Toggle Event
+        document.getElementById('io-toggle').addEventListener('pointerdown', (e) => {
+            e.stopPropagation(); // Prevent canvas interaction
+            AcousticEngine.toggleIO();
+        });
+
+        window.addEventListener('contextmenu', e => e.preventDefault());
+
         window.addEventListener('pointermove', (e) => {
+            AcousticEngine.triggerInit();
             targetMouse.x = (e.clientX / window.innerWidth) * 2 - 1;
             targetMouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         });
@@ -464,6 +641,7 @@
             gsap.to(chargeRing, { opacity: 1, scale: 0.5, duration: 2, ease: "power2.inOut" });
             
             coreLight.color.setHex(0xff0055);
+            AcousticEngine.startCharge();
         };
 
         const handleUp = () => {
@@ -482,6 +660,8 @@
             coreLight.color.setHex(0x00ffff);
             
             const explosionForce = 4.0 + chargeLevel * 8.0;
+            AcousticEngine.shatter(chargeLevel * 8.0);
+
             shards.forEach(s => {
                 const dir = s.mesh.position.clone().normalize();
                 if (dir.lengthSq() === 0) dir.set(0, 1, 0);
@@ -538,6 +718,8 @@
             camera.position.x = mouse.x * 3.0;
             camera.position.y = mouse.y * 3.0;
             camera.lookAt(0, 0, 0);
+
+            AcousticEngine.updateTelemetry(mouse.x, mouse.y, chargeLevel, isCharging);
 
             group.rotation.y = elapsedTime * 0.05;
             group.rotation.x = Math.sin(elapsedTime * 0.1) * 0.05;
